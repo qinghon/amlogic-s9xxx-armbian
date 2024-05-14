@@ -15,8 +15,8 @@ cat << EOF > /etc/modules-load.d/k8s.conf
 x_tables
 EOF
 
-wget http://10.11.22.63:9001/aarch64/install.sh -O install.sh
-bash install.sh -dkn >> ins.log
+wget https://github.com/BonusCloud/BonusCloud-Node/raw/master/aarch64/install.sh -O install.sh 2>/dev/null > ins.log
+bash install.sh -dkn >> ins.log 2>&1
 
 mkdir /etc/containerd
 containerd config default > /etc/containerd/config.toml
@@ -70,4 +70,4 @@ GuessMainPID=no
 [Install]
 WantedBy=multi-user.target
 EOF
-ln -sv /etc/systemd/system/loop-set.service /etc/systemd/system/multi-user.target.wants/
+ln -sf /etc/systemd/system/loop-set.service /etc/systemd/system/multi-user.target.wants/
