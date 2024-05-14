@@ -1,0 +1,72 @@
+#!/bin/bash
+
+cat << EOF > /usr/bin/emmc-install
+#!/bin/bash
+
+if [[ ! -e "/tmp/\$(basename \$0)" ]]; then
+	cp -v \$0{,.bak}
+	mv -v \$0 /tmp
+	/tmp/\$(basename \$0) \$@
+	ret=\$?
+	mv /tmp/\$(basename \$0) \$(dirname \$0)
+	if [[ \$ret -eq 0 ]] ; then
+	    sleep 20
+	    poweroff
+	fi
+	for i in {1..10} ; do
+	    echo "install to emmc fail, please manually execute \"armbian-install\""
+	done
+fi
+source /etc/ophub-release
+source /boot/ophub-release || true
+
+if [[ -n "\$MAC_PREFIX" ]] ; then
+    MAC_PREFIX_=\${MAC_PREFIX//:/""}
+    MAC_PREFIX_CNT=\$((\${#MAC_PREFIX_} / 2 ))
+    MAC=\$MAC_PREFIX:\$(hexdump -n\${MAC_PREFIX_CNT} -e "\$MAC_PREFIX_CNT/1 \":%02x\"" /dev/urandom | awk ' { sub(/^:../, "02"); print } ')
+
+    printf "allow-hotplug eth0
+iface eth0 inet dhcp
+hwaddress \${MAC}\n" > /etc/network/interfaces.d/eth0
+
+fi
+
+if [[ -z "\$MODEL_ID" ]] || [[ ! "\$MODEL_ID" -eq "\$MODEL_ID" ]]; then
+    for i in {1..10} ; do
+        echo "Failed to identify the model, please manually execute \"armbian-install\" "
+    done
+    exit 1
+fi
+
+
+printf "\$MODEL_ID\n2\n\n" | armbian-install
+
+rm -vf /etc/network/interfaces.d/eth0
+
+sync;sync; echo 3 > /proc/sys/vm/drop_caches
+EOF
+
+chmod +x /usr/bin/emmc-install
+
+cat << EOF > /etc/systemd/system/emmc-install.service
+[Unit]
+Description=Install systemd to emmc
+ConditionFileIsExecutable=/usr/bin/emmc-install
+After=local-fs.target
+
+[Service]
+Type=oneshot
+StandardOutput=journal+console
+ExecStart=/usr/bin/emmc-install
+RemainAfterExit=true
+
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+ln -sv /etc/systemd/system/emmc-install.service /etc/systemd/system/multi-user.target.wants/
+
+rm -f /root/.not_logged_in_yet
+rm -rf /etc/systemd/system/getty@.service.d
+rm -rf /etc/systemd/system/serial-getty@.service.d
