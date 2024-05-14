@@ -1,0 +1,3 @@
+#!/bin/bash
+
+printf "* *	* * *	root	echo 1 > /dev/watchdog; sleep 20; echo 1 > /dev/watchdog; sleep 20; echo 1 > /dev/watchdog\n" >> /etc/crontab

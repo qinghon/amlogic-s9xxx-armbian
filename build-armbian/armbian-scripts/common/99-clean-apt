@@ -1,0 +1,4 @@
+#!/bin/bash
+
+apt clean
+rm -rf /var/lib/apt/lists/*

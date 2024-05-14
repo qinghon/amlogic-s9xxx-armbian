@@ -56,6 +56,10 @@ uboot_path="${build_path}/u-boot"
 common_files="${build_path}/armbian-files/common-files"
 platform_files="${build_path}/armbian-files/platform-files"
 different_files="${build_path}/armbian-files/different-files"
+common_script_files="${build_path}/armbian-scripts/common"
+platform_script_files="${build_path}/armbian-scripts/platform"
+different_script_files="${build_path}/armbian-scripts/different"
+
 model_conf="${common_files}/etc/model_database.conf"
 firmware_path="${common_files}/usr/lib/firmware"
 tmp_dir="${current_path}/build/tmp_dir"
@@ -585,7 +589,7 @@ confirm_version() {
 }
 
 extract_armbian() {
-    process_msg "(1/7) Extract armbian files."
+    process_msg "(1/8) Extract armbian files."
     cd ${current_path}
 
     rm -rf ${tmp_dir}
@@ -618,7 +622,7 @@ extract_armbian() {
 }
 
 make_image() {
-    process_msg "(2/7) Make new armbian image."
+    process_msg "(2/8) Make new armbian image."
     cd ${current_path}
 
     # Set Armbian image file parameters
@@ -639,7 +643,7 @@ make_image() {
     }
 
     # Set Armian file name
-    armbian_filename="Armbian_${armbian_rebuild_version}_${PLATFORM}_${board}_${release_codename}_${kernel}_${os_type}_$(date +"%Y.%m.%d").img"
+    armbian_filename="BonusCloud-LiteNode_${armbian_rebuild_version}_${PLATFORM}_${board}_${release_codename}_${kernel}_${os_type}_$(date +"%Y%m%d").img"
     build_image_file="${tmp_outpath}/${armbian_filename}"
     rm -f ${build_image_file}
 
@@ -728,7 +732,7 @@ make_image() {
 }
 
 copy_files() {
-    process_msg "(3/7) Copy the Armbian files."
+    process_msg "(3/8) Copy the Armbian files."
     cd ${current_path}
 
     # Create a dual-partition general directory
@@ -782,7 +786,7 @@ copy_files() {
 }
 
 replace_kernel() {
-    process_msg "(4/7) Replace kernel files."
+    process_msg "(4/8) Replace kernel files."
     cd ${current_path}
 
     # Determine custom kernel filename
@@ -821,7 +825,7 @@ replace_kernel() {
 }
 
 refactor_bootfs() {
-    process_msg "(5/7) Refactor bootfs files."
+    process_msg "(5/8) Refactor bootfs files."
     cd ${tag_bootfs}
 
     # Process Amlogic series boot partition files
@@ -885,7 +889,7 @@ refactor_bootfs() {
 }
 
 refactor_rootfs() {
-    process_msg "(6/7) Refactor rootfs files."
+    process_msg "(6/8) Refactor rootfs files."
     cd ${tag_rootfs}
 
     # Remove the scripts contained in [ armbian-bsp-cli-odroidn2 ] that will cause the system to fail to start
@@ -1101,8 +1105,42 @@ refactor_rootfs() {
     sync && sleep 3
 }
 
+custom_rootfs() {
+    if [ "$(uname -m)" != "aarch64" ]; then
+        process_msg "(7/8) skip run custom script on cross platform"
+        return 0
+    fi
+    process_msg "(7/8) run custom script for dist image"
+
+    cd ${tag_rootfs}
+
+    mount --bind /dev dev
+    mount --bind /proc proc
+    mount --bind /sys sys
+    mount --bind /etc/hosts etc/hosts
+    mount --bind /etc/resolv.conf etc/resolv.conf
+    mount -t tmpfs tmpfs run
+    mount -t tmpfs tmpfs tmp
+
+
+    mkdir -p run/user/0
+    cp -ar ${common_script_files} run/user/0/common
+    [[ -d "${different_script_files}/${board}" ]] && cp -af ${different_script_files}/${board} run/user/0/board
+
+    chroot . /usr/bin/run-parts --report /run/user/0/common
+    [[ -d "${different_script_files}/${board}" ]] && chroot . /usr/bin/run-parts --report /run/user/0/board
+
+    umount etc/hosts
+    umount etc/resolv.conf
+    umount dev
+    umount proc
+    umount sys
+    umount run
+    umount tmp
+}
+
 clean_tmp() {
-    process_msg "(7/7) Clear temporary files."
+    process_msg "(8/8) Clear temporary files."
     cd ${current_path}
 
     umount -f ${tmp_armbian} 2>/dev/null
@@ -1176,7 +1214,7 @@ loop_rebuild() {
 
                     # Check disk space size
                     echo -ne "(${j}.${i}) Start building Armbian [\033[92m ${board} - ${KERNEL_TAGS}/${kernel} \033[0m]. "
-                    now_remaining_space="$(df -Tk ${armbian_outputpath} | grep '/dev/' | awk '{print $5}' | echo $(($(xargs) / 1024 / 1024)))"
+                    now_remaining_space="$(df -Tk ${armbian_outputpath} | grep -v 'Type' | awk '{print $5}' | echo $(($(xargs) / 1024 / 1024)))"
                     if [[ "${now_remaining_space}" -le "6" ]]; then
                         echo -e "${WARNING} Remaining space is less than 6G, exit this build."
                         break
@@ -1191,6 +1229,7 @@ loop_rebuild() {
                     replace_kernel
                     refactor_bootfs
                     refactor_rootfs
+                    custom_rootfs
                     clean_tmp
 
                     echo -e "(${j}.${i}) Armbian build successfully. \n"
