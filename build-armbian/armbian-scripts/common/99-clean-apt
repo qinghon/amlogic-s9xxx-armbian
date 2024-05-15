@@ -1,6 +1,6 @@
 #!/bin/bash
 
-apt clean
+apt clean 2>/dev/null 2>&1
 rm -rf /var/lib/apt/lists/*
 dd if=/dev/zero of=fill.bin bs=1M 2>/dev/null
 rm -f fill.bin
