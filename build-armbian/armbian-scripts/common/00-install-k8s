@@ -18,7 +18,7 @@ EOF
 wget https://github.com/BonusCloud/BonusCloud-Node/raw/master/aarch64/install.sh -O install.sh 2>/dev/null > ins.log
 bash install.sh -dkn >> ins.log 2>&1
 
-mkdir /etc/containerd
+mkdir -p /etc/containerd
 containerd config default > /etc/containerd/config.toml
 sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
 
