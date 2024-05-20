@@ -57,6 +57,7 @@ INFO="[\033[94m INFO \033[0m]"
 SUCCESS="[\033[92m SUCCESS \033[0m]"
 OPTIONS="[\033[93m OPTIONS \033[0m]"
 ERROR="[\033[91m ERROR \033[0m]"
+ETH0_MAC=${MAC:-""}
 #
 #================================================================================================
 
@@ -87,6 +88,18 @@ check_depends() {
         [[ "${?}" -eq "0" ]] || error_msg "Failed to install dependencies, aborting!"
     else
         echo -e "${INFO} Dependency check completed. Proceeding installation..."
+    fi
+}
+
+amaprt_read_mac() {
+    source <(ampart $DEV_EMMC --mode esnapshot 2>/dev/null | grep env | head -n 1 | awk '{print $4}' | awk -F: '{printf "export ENV_OFFSET="$2"\nexport ENV_SIZE="$3"\n"}' )
+    if [[ -z "${ENV_OFFSET}" ]] || [[ -z "$ENV_SIZE" ]]; then
+        return 2
+    fi
+    local mac
+    mac=$(dd if=$DEV_EMMC bs=512 skip=$(( ${ENV_OFFSET} / 512 )) count=$(( $ENV_SIZE / 512 )) 2>/dev/null | strings | grep -oE 'mac=([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}' | head -n 1 | grep mac | cut -d'=' -f2)
+    if [[ -n "$mac" ]]; then
+        MAC=$mac
     fi
 }
 
@@ -183,6 +196,9 @@ init_var() {
     # With TEXT_OFFSET patch is [ 0108 ], without TEXT_OFFSET patch is [ 0000 ] and need to ues [ UBOOT_OVERLOAD ] file.
     NEED_OVERLOAD="yes"
     [[ "$(hexdump -n 15 -x "/boot/zImage" 2>/dev/null | head -n 1 | awk '{print $7}')" == "0108" ]] && NEED_OVERLOAD="no"
+
+    [[ -z "$ETH0_MAC" ]] && ETH0_MAC=$(cat /sys/class/net/eth0/address 2>/dev/null)
+    amaprt_read_mac
 }
 
 # Search the model list
@@ -461,6 +477,10 @@ copy_bootfs() {
         BOOT_CONF="uEnv.conf"
         sed -i "s|root=.*console=ttyAML0|root=${uenv_mount_string} console=ttyAML0|g" ${uenv_conf_file}
         sed -i "s|meson.*.dtb|${FDTFILE}|g" ${uenv_conf_file}
+        if [[ -n "$MAC" ]] && [[ "$MAC" != "$ETH0_MAC" ]]; then
+            echo "ethaddr=$MAC" >> ${uenv_conf_file}
+        fi
+	sed -i '/APPEND/s/$/ systemd.unified_cgroup_hierarchy=0/' ${uenv_conf_file}
     }
 
     # Update [ /boot/extlinux/extlinux.conf ] settings
