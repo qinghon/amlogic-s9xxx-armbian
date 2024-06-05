@@ -651,7 +651,7 @@ make_image() {
     }
 
     # Set Armian file name
-    armbian_filename="BonusCloud-LiteNode_${armbian_rebuild_version}_${PLATFORM}_${board}_${release_codename}_${kernel}_${os_type}_$(date +"%Y%m%d").img"
+    armbian_filename="BonusCloud-LiteNode_${armbian_rebuild_version}_${PLATFORM}_${board}_${release_codename}_${kernel}_$(date +"%Y%m%d").img"
     build_image_file="${tmp_outpath}/${armbian_filename}"
     rm -f ${build_image_file}
 
