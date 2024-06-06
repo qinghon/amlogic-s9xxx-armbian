@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+cat <<EOF > /etc/apt/sources.list
+deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy main restricted universe multiverse
+# deb-src http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy main restricted universe multiverse
+deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-updates main restricted universe multiverse
+# deb-src http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-updates main restricted universe multiverse
+deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-backports main restricted universe multiverse
+# deb-src http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-backports main restricted universe multiverse
+
+deb http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-security main restricted universe multiverse
+# deb-src http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ jammy-security main restricted universe multiverse
+EOF
+
+cat << EOF > /etc/modules-load.d/k8s.conf
+x_tables
+EOF
+
+wget https://github.com/BonusCloud/BonusCloud-Node/raw/master/aarch64/install.sh -O install.sh 2>/dev/null > ins.log
+bash install.sh -dkn >> ins.log 2>&1
+
+mkdir -p /etc/containerd
+containerd config default > /etc/containerd/config.toml
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+
+cat <<EOF > /etc/crictl.yaml
+runtime-endpoint: unix:///var/run/containerd/containerd.sock
+image-endpoint: unix:///var/run/containerd/containerd.sock
+timeout: 10
+debug: false
+EOF
+
+cat <<EOF > /opt/bcloud/enable_loop.sh
+#!/bin/bash
+
+avail=\$(df -h | grep -w '/' | awk '{print \$4}' | grep 'G'| sed 's/G//g')
+avail=\${avail:-0}
+
+CREATE=0
+if [[ ! -f "/loop.bin" ]] ; then
+	if [[ \$(echo "\$avail > 100"|bc ) -eq 0  ]] ; then
+		exit 0
+	fi
+	truncate --size=108G /loop.bin
+	CREATE=1
+else
+	losetup -a | grep -w '/loop.bin' && exit 0
+fi
+loopdev=\$(losetup -P --find --show /loop.bin)
+if [[ \$CREATE -eq 1 ]] ; then
+	pvcreate \$loopdev
+	vgcreate BonusVolGroup \$loopdev
+fi
+
+EOF
+chmod +x /opt/bcloud/enable_loop.sh
+
+cat <<EOF > /etc/systemd/system/loop-set.service
+[Unit]
+Description=loop device disk set
+ConditionFileIsExecutable=/opt/bcloud/enable_loop.sh
+Before=docker.service kubelet.service containerd.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/bcloud/enable_loop.sh
+TimeoutSec=0
+RemainAfterExit=yes
+GuessMainPID=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ln -sf /etc/systemd/system/loop-set.service /etc/systemd/system/multi-user.target.wants/
