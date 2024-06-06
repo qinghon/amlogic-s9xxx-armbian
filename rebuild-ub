@@ -1,0 +1,203 @@
+#!/bin/bash
+
+
+### usage: rebuild-ub [options]
+###   eg: rebuild-ub -b all
+displayhelp() { sed -rn 's/^### ?//;T;p' "$0" ;}
+
+# Related file storage path
+current_path="${PWD}"
+armbian_outputpath="${current_path}/build/output/images"
+armbian_rebuild_file="${armbian_outputpath}/*-trunk_*.img"
+build_path="${current_path}/build-armbian"
+kernel_path="${build_path}/kernel"
+uboot_path="${build_path}/u-boot"
+common_files="${build_path}/armbian-files/common-files"
+platform_files="${build_path}/armbian-files/platform-files"
+different_files="${build_path}/armbian-files/different-files"
+common_script_files="${build_path}/armbian-scripts/common"
+platform_script_files="${build_path}/armbian-scripts/platform"
+different_script_files="${build_path}/armbian-scripts/different"
+
+model_conf="${common_files}/etc/model_database.conf"
+firmware_path="${common_files}/usr/lib/firmware"
+tmp_dir="${current_path}/build/tmp_dir"
+tmp_outpath="${tmp_dir}/tmp_out"
+tmp_armbian="${tmp_dir}/tmp_armbian"
+tmp_ub="${tmp_dir}/tmp_ub"
+tmp_build="${tmp_dir}/tmp_build"
+tmp_aml_image="${tmp_dir}/tmp_aml_image"
+
+vendor_files="${build_path}/vendor-files"
+vendor_common="${vendor_files}/common"
+vendor_diff="${vendor_files}/different"
+tmp_board_dir=""
+
+build_armbianub=()
+build_board="all"
+set -e
+error_msg() {
+    echo -e " [💔] ${1}"
+    exit 1
+}
+
+process_msg() {
+    echo -e " [🌿] ${1}"
+}
+
+init_vars(){
+	while getopts "b:" opt "$@"; do
+	case $opt in
+		b ) build_board=${OPTARG} ;;
+
+		? ) error_msg "Unknow arg. exiting\n" ;displayhelp; exit 1 ;;
+	esac
+	done
+}
+check_data() {
+	if [[ "${build_board}" == "all" ]] ; then
+		build_armbianub=($(ls "${vendor_diff}" | xargs))
+	else
+		build_armbianub=($(echo "$build_board" | sed 's/_/\n/g' | xargs))
+	fi
+	if ! which aml_image_v2_packer > /dev/null 2>&1 ; then
+		error_msg "cannot find aml_image_v2_packer"
+	fi
+	if ! which dtbTool > /dev/null 2>&1 ; then
+		error_msg "cannot find dtbTool"
+	fi
+	if ! which mkbootimg > /dev/null 2>&1 ; then
+		error_msg "cannot find mkbootimg"
+	fi
+	if ! which dtc > /dev/null 2>&1 ; then
+		error_msg "cannot find dtc"
+	fi
+}
+
+download_files(){
+	mkdir -p ${tmp_build}
+	[[ ! -f ${tmp_build}/initrd.img ]] && wget -t 0 -c https://github.com/qinghon/amlogic-partitioner/releases/latest/download/initrd.img -O ${tmp_build}/initrd.img || true
+
+}
+
+create_file() {
+	cd ${current_path}
+	mkdir -p "${tmp_board_dir}"
+	ln ${vendor_diff}/${b}/* "${tmp_board_dir}/"
+	ln ${vendor_common}/* "${tmp_board_dir}/"
+	mkdir -p ${tmp_build}/boot
+}
+extract_armbian(){
+	armbian_image_file=$(ls ${armbian_outputpath}/*${board}*.img | grep -v '_ub.img' | head -n 1)
+	[[ -z ${armbian_image_file} ]] && error_msg "not found img"
+
+	loop_old="$(losetup -P -r -f --show "${armbian_image_file}")"
+	[[ -n "${loop_old}" ]] || error_msg "losetup ${armbian_image_file} failed."
+
+	mount "${loop_old}p1" ${tmp_build}/boot
+}
+build_partitions(){
+	local UIMAGE_ENTRYPOIONT
+	local DT_ID
+	source ${tmp_board_dir}/board.vars
+	mkimage -A arm64 -O linux -T kernel -C none -a ${UIMAGE_ENTRYPOIONT} -e ${UIMAGE_ENTRYPOIONT} -d ${tmp_build}/boot/zImage "${tmp_board_dir}/uImage"
+	mkbootimg --cmdline 'console=ttyAML0,115200n8 console=tty0 root=/dev/ram0 rw init=/init panic=10 loglevel=8'  \
+		--kernel "${tmp_board_dir}/uImage" --ramdisk ${tmp_build}/initrd.img -o "${tmp_board_dir}/boot.PARTITION"
+	local dtb_file
+	local dtb_file_path
+	local dts_file
+	dtb_file_path="${tmp_build}/boot$(cat ${tmp_build}/boot/uEnv.txt | grep FDT | cut -d'=' -f2)"
+	dtb_file=$(basename $dtb_file_path)
+	dts_file=${dtb_file/dtb/dts}
+
+	dtc -s -q -I dtb -O dts ${dtb_file_path} -o ${tmp_board_dir}/${dts_file}
+	sed -i '/^};$/d' ${tmp_board_dir}/${dts_file}
+	local dts_ids
+	local dts_id
+	dts_ids=($(echo "$DT_ID" | sed 's/:/\n/' | xargs))
+	mkdir -p ${tmp_board_dir}/dtbs
+	for dts_id in "${dts_ids[@]}"; do
+		cat ${tmp_board_dir}/${dts_file} > ${tmp_board_dir}/dtbs/${dts_id}-${dts_file}
+		sed -i '/model =.*;/a\\tamlogic-dt-id = "'${dts_id}'";' ${tmp_board_dir}/dtbs/${dts_id}-${dts_file}
+		cat <<EOF >> ${tmp_board_dir}/dtbs/${dts_id}-${dts_file}
+	partitions {
+		part-0 = <&logo>;
+		part-1 = <&boot>;
+		part-2 = <&armbian_boot>;
+		part-3 = <&armbian_rootfs>;
+		parts = <0x4>;
+		logo: logo {
+		        mask = <0x01>;
+		        pname = "logo";
+		        size = <0x00 0x800000>;
+		};
+		boot: boot {
+		        mask = <0x01>;
+		        pname = "boot";
+		        size = <0x00 0x5000000>;
+		};
+		armbian_boot: armbian_boot {
+		        mask = <0x01>;
+		        pname = "armbian_boot";
+		        size = <0x00 0x20000000>;
+		};
+		armbian_rootfs: armbian_rootfs {
+		        mask = <0x04>;
+		        pname = "armbian_rootfs";
+		        size = <0xffffffff 0xffffffff>;
+		};
+	};
+};
+EOF
+	done
+	for f in ${tmp_board_dir}/dtbs/* ; do
+		dtc -s -q -I dts -O dtb ${f} -o ${f/dts/dtb}
+	done
+	dtbTool -o ${tmp_board_dir}/_aml_dtb.PARTITION ${tmp_board_dir}/dtbs
+	[[ ! -f ${tmp_board_dir}/_aml_dtb.PARTITION ]] && error_msg "create _aml_dtb failed"
+
+	dd if="${loop_old}p1" of=${tmp_board_dir}/armbian_boot.PARTITION bs=4M conv=fsync
+	dd if="${loop_old}p2" of=${tmp_board_dir}/armbian_rootfs.PARTITION bs=4M conv=fsync
+}
+build_ubimage() {
+	mkdir -p ${tmp_aml_image}
+	local dst_img_file
+	dst_img_file=$(basename ${armbian_image_file/${board}/${board}-${b}})
+	dst_img_file=${dst_img_file/.img/_ub.img}
+	aml_image_v2_packer -r ${tmp_board_dir}/image.cfg ${tmp_board_dir} "${tmp_aml_image}/${dst_img_file}"
+	mv "${tmp_aml_image}/${dst_img_file}" ${armbian_outputpath}
+}
+clean_tmp() {
+	umount ${tmp_build}/boot
+	losetup -d ${loop_old}
+	rm -rf ${tmp_board_dir}
+}
+
+loopbuild(){
+	cd ${current_path}
+	echo -e "${STEPS} Start building Armbian..."
+
+	for b in "${build_armbianub[@]}"; do
+		MODEL_ID=
+		if  grep -q MODEL_ID ${vendor_diff}/${b}/board.vars ; then
+			source <(echo "export $(grep MODEL_ID ${vendor_diff}/${b}/board.vars)")
+		fi
+		if [[ -z "$MODEL_ID" ]]; then
+			board=$(grep -w "${b}" ${model_conf} | awk -F: '{print $14}' | awk '{print $1}')
+		else
+			board=$(grep -E "^$MODEL_ID" ${model_conf} | awk -F: '{print $14}' | awk '{print $1}')
+		fi
+
+		tmp_board_dir="${tmp_ub}/$b"
+		create_file
+		extract_armbian
+		build_partitions
+		build_ubimage
+		clean_tmp
+	done
+}
+
+init_vars "$@"
+check_data
+download_files
+loopbuild

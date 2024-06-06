@@ -1,0 +1,3 @@
+#!/bin/bash
+
+echo "MAC_PREFIX=a0:4c:0c" >> /etc/ophub-release
