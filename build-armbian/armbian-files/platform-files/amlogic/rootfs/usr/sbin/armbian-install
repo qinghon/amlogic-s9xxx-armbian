@@ -480,7 +480,7 @@ copy_bootfs() {
         if [[ -n "$MAC" ]] && [[ "$MAC" != "$ETH0_MAC" ]]; then
             echo "ethaddr=$MAC" >> ${uenv_conf_file}
         fi
-	sed -i '/APPEND/s/$/ systemd.unified_cgroup_hierarchy=0/' ${uenv_conf_file}
+	grep -q 'unified_cgroup_hierarchy=0' $uenv_conf_file || sed -i '/APPEND/s/$/ systemd.unified_cgroup_hierarchy=0/' ${uenv_conf_file}
     }
 
     # Update [ /boot/extlinux/extlinux.conf ] settings

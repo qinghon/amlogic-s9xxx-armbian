@@ -136,6 +136,14 @@ process_msg() {
     echo -e " [🌿] ${1}"
 }
 
+is_native() {
+    if [ "$(uname -m)" != "aarch64" ]; then
+        return 0
+    else
+    	return 1
+    fi
+}
+
 mount_try() {
     # Check mount parameters
     m_type="${1}"
@@ -327,6 +335,13 @@ check_data() {
     # Convert kernel repository address to api format
     [[ "${kernel_repo}" =~ ^https: ]] && kernel_repo="$(echo ${kernel_repo} | awk -F'/' '{print $4"/"$5}')"
     kernel_api="https://github.com/${kernel_repo}"
+}
+check_platform(){
+   if ! is_native; then
+   	if ! which -q qemu-aarch64-static ; then
+   	    error_msg "not aarch64 platform and not found qemu-aarch64-static"
+   	fi
+   fi
 }
 
 find_armbian() {
@@ -601,11 +616,85 @@ confirm_version() {
     [[ "${KERNEL_TAGS}" =~ ^[1-9]+ ]] && KERNEL_DOWN_TAGS="stable" || KERNEL_DOWN_TAGS="${KERNEL_TAGS}"
 }
 
+mount_rootfs(){
+    local dst
+    dst="$1"
+    mount -t devtmpfs devtmpfs ${dst}/dev
+    mount -t proc proc ${dst}/proc
+    mount -t sysfs sysfs ${dst}/sys
+    mkdir -p ${dst}/dev/pts
+    mount -t devpts devpts ${dst}/dev/pts
+    mount --bind /etc/hosts ${dst}/etc/hosts
+    mount --bind /etc/resolv.conf ${dst}/etc/resolv.conf
+    mount -t tmpfs tmpfs ${dst}/run
+    mount -t tmpfs tmpfs ${dst}/tmp
+}
+umount_rootfs(){
+    local dst
+    dst="$1"
+    umount ${dst}/etc/hosts
+    umount ${dst}/etc/resolv.conf
+    umount ${dst}/dev/pts
+    umount ${dst}/dev
+    umount ${dst}/proc
+    umount ${dst}/sys
+    umount ${dst}/run
+    umount ${dst}/tmp
+}
+
+
+
+custom_armbian_base() {
+    cd ${current_path}
+    process_msg "(0/8) custom base armbian image."
+    rm -rf ${tmp_dir}
+    mkdir -p ${tmp_outpath} ${tmp_armbian} ${tmp_build} ${tmp_aml_image}
+    local armbian_base_name
+    local armbian_image_file
+    local cur_time
+
+    cur_time=$(date +"%Y%m%d")
+    armbian_base_name="${armbian_rebuild_name/trunk_/trunk_base_}"
+    armbian_base_name=${armbian_base_name/.img/_${cur_time}.img}
+    armbian_image_file="${tmp_aml_image}/${armbian_base_name}"
+
+    cp -f "${armbian_outputpath}/${armbian_rebuild_name}" "${armbian_image_file}"
+    truncate -s ${root_mb}M "${armbian_image_file}"
+    parted -s "${armbian_image_file}" resizepart 1 100%
+
+    loop_old="$(losetup -P -f --show "${armbian_image_file}")"
+    [[ -n "${loop_old}" ]] || error_msg "losetup ${armbian_image_file} failed."
+    e2fsck -f ${loop_old}p1
+    resize2fs ${loop_old}p1
+
+    mount_try ext4 ${loop_old}p1 ${tmp_armbian}
+
+    cd ${tmp_armbian}
+
+    mount_rootfs .
+    mkdir -p run/user/0
+    cp -ar ${common_script_files} run/user/0/common
+    if is_native ; then
+    	cp "$(which qemu-aarch64-static)" run/user/0/
+        chroot . /run/user/0/qemu-aarch64-static /usr/bin/run-parts --report /run/user/0/common
+    else
+    	chroot . /usr/bin/run-parts --report /run/user/0/common
+    fi
+
+    umount_rootfs .
+
+    cd ${current_path}
+    umount ${tmp_armbian}
+
+    losetup -d ${loop_old}
+    mv ${armbian_image_file} ${armbian_outputpath}/
+    armbian_rebuild_name=${armbian_base_name}
+}
+
 extract_armbian() {
     process_msg "(1/8) Extract armbian files."
     cd ${current_path}
 
-    rm -rf ${tmp_dir}
     mkdir -p ${tmp_outpath} ${tmp_armbian} ${tmp_build} ${tmp_aml_image}
 
     armbian_image_file="${tmp_aml_image}/armbian_${board}_${kernel}.img"
@@ -656,7 +745,7 @@ make_image() {
     }
 
     # Set Armian file name
-    armbian_filename="BonusCloud-LiteNode_${armbian_rebuild_version}_${PLATFORM}_${board}_${release_codename}_${kernel}_$(date +"%Y%m%d").img"
+    armbian_filename="BonusCloud-Lite_${armbian_rebuild_version}_${PLATFORM}_${board}_${release_codename}_${kernel}_$(date +"%Y%m%d").img"
     build_image_file="${tmp_outpath}/${armbian_filename}"
     rm -f ${build_image_file}
 
@@ -1125,31 +1214,22 @@ custom_rootfs() {
     fi
     process_msg "(7/8) run custom script for dist image"
 
+    [[ ! -d "${different_script_files}/${board}" ]] && return 0
+
     cd ${tag_rootfs}
 
-    mount --bind /dev dev
-    mount --bind /proc proc
-    mount --bind /sys sys
-    mount --bind /etc/hosts etc/hosts
-    mount --bind /etc/resolv.conf etc/resolv.conf
-    mount -t tmpfs tmpfs run
-    mount -t tmpfs tmpfs tmp
+    mount_rootfs .
 
 
     mkdir -p run/user/0
-    cp -ar ${common_script_files} run/user/0/common
-    [[ -d "${different_script_files}/${board}" ]] && cp -af ${different_script_files}/${board} run/user/0/board
-
-    chroot . /usr/bin/run-parts --report /run/user/0/common
-    [[ -d "${different_script_files}/${board}" ]] && chroot . /usr/bin/run-parts --report /run/user/0/board
-
-    umount etc/hosts
-    umount etc/resolv.conf
-    umount dev
-    umount proc
-    umount sys
-    umount run
-    umount tmp
+    cp -af ${different_script_files}/${board} run/user/0/board
+    if is_native ; then
+    	cp "$(which qemu-aarch64-static)" run/user/0/
+        chroot . /run/user/0/qemu-aarch64-static /usr/bin/run-parts --report /run/user/0/board
+    else
+    	chroot . /usr/bin/run-parts --report /run/user/0/board
+    fi
+    umount_rootfs .
 }
 
 clean_tmp() {
@@ -1180,6 +1260,7 @@ loop_rebuild() {
     echo -e "${STEPS} Start building Armbian..."
 
     j="1"
+    custom_armbian_base
     for b in "${build_armbian[@]}"; do
         {
             # Set specific configuration for building Armbian system
@@ -1253,6 +1334,7 @@ loop_rebuild() {
             let j++
         }
     done
+    rm "${armbian_outputpath}/*-trunk_base_*.img"
 }
 
 # Show welcome message
@@ -1264,6 +1346,8 @@ echo -e "${INFO} Server running on Ubuntu: [ Release: ${host_release} / Host: ${
 # Initialize variables
 init_var "${@}"
 check_data
+
+check_platform
 # Find rebuild files
 find_armbian
 # Download the dependency files
