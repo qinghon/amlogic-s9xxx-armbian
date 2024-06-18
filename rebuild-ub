@@ -83,8 +83,8 @@ download_files(){
 create_file() {
 	cd ${current_path}
 	mkdir -p "${tmp_board_dir}"
-	ln ${vendor_diff}/${b}/* "${tmp_board_dir}/"
 	ln ${vendor_common}/* "${tmp_board_dir}/"
+	ln -f ${vendor_diff}/${b}/* "${tmp_board_dir}/"
 	mkdir -p ${tmp_build}/boot
 }
 extract_armbian(){
