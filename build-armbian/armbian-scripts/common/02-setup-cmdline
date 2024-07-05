@@ -1,7 +1,0 @@
-#!/bin/bash
-
-uenv_conf_file=/boot/uEnv.txt
-[[ -f "${uenv_conf_file}" ]] && {
-	grep -q 'unified_cgroup_hierarchy=0' $uenv_conf_file || sed -i '/APPEND/s/$/ systemd.unified_cgroup_hierarchy=0/' ${uenv_conf_file}
-}
-

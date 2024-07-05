@@ -1,57 +1,6 @@
 #!/bin/bash
 
-cat << EOF > /usr/bin/emmc-install
-#!/bin/bash
-
-# Check if current system is booted from eMMC
-root_devname="\$(df / | tail -n1 | awk '{print \$1}' | awk -F '/' '{print substr(\$3, 1, length(\$3)-2)}')"
-if lsblk -l | grep -E "^\${root_devname}boot0" >/dev/null; then
-    echo "Current system is already installed to eMMC!"
-    rm \$0
-fi
-
-if [[ ! -e "/tmp/\$(basename \$0)" ]]; then
-	cp -v \$0{,.bak}
-	mv -v \$0 /tmp
-	/tmp/\$(basename \$0) \$@
-	ret=\$?
-	mv /tmp/\$(basename \$0) \$(dirname \$0)
-	if [[ \$ret -eq 0 ]] ; then
-	    sleep 20
-	    poweroff
-	fi
-	for i in {1..10} ; do
-	    echo "install to emmc fail, please manually execute \"armbian-install\""
-	done
-fi
-source /etc/ophub-release
-source /boot/ophub-release || true
-
-if [[ -n "\$MAC_PREFIX" ]] ; then
-    MAC_PREFIX_=\${MAC_PREFIX//:/""}
-    MAC_PREFIX_CNT=\$((\${#MAC_PREFIX_} / 2 ))
-    MAC=\$MAC_PREFIX:\$(hexdump -n\${MAC_PREFIX_CNT} -e "\$MAC_PREFIX_CNT/1 \":%02x\"" /dev/urandom | awk ' { sub(/^:../, "02"); print } ')
-
-    printf "allow-hotplug eth0
-iface eth0 inet dhcp
-hwaddress \${MAC}\n" > /etc/network/interfaces.d/eth0
-
-fi
-
-if [[ -z "\$MODEL_ID" ]] || [[ ! "\$MODEL_ID" -eq "\$MODEL_ID" ]]; then
-    for i in {1..10} ; do
-        echo "Failed to identify the model, please manually execute \"armbian-install\" "
-    done
-    exit 1
-fi
-rm -f /root/.bcode.txt
-
-printf "\$MODEL_ID\n2\n\n" | armbian-install
-
-rm -vf /etc/network/interfaces.d/eth0
-
-sync;sync; echo 3 > /proc/sys/vm/drop_caches
-EOF
+cp -f "$(dirname $0)/emmc-install" /usr/bin/emmc-install
 
 chmod +x /usr/bin/emmc-install
 

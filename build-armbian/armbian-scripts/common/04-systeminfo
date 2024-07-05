@@ -1,0 +1,37 @@
+#!/bin/bash
+
+apt-get install -y neofetch
+cp -f "$(dirname $0)/neofetch_config.conf" /etc/neofetch/config.conf
+cp -f "$(dirname $0)/systeminfo.sh" /usr/bin/systeminfo.sh
+chmod +x /usr/bin/systeminfo.sh
+
+sed -i '/exit 0/d' /etc/rc.local
+echo '
+IFACE=eth0
+if test -f "/sys/class/net/${IFACE}/address" ; then
+	hostnamectl set-hostname "BonusCloud-Lite-$(cat /sys/class/net/${IFACE}/address| tr -d ":")"
+fi
+' >> /etc/rc.local
+echo  "exit 0" >> /etc/rc.local
+chmod +x /etc/rc.local
+
+cat <<EOF > /lib/systemd/system/systeminfo.service
+[Unit]
+Description=system information
+After=getty@tty5.service
+After=writable.mount
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/systeminfo.sh
+StandardInput=tty
+TTYPath=/dev/tty5
+TTYReset=yes
+TTYVHangup=yes
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF

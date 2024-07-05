@@ -658,6 +658,12 @@ custom_armbian_base() {
     armbian_base_name=${armbian_base_name/.img/_${cur_time}.img}
     armbian_image_file="${tmp_aml_image}/${armbian_base_name}"
 
+    if [[ -n "$USE_EXIST_BASE" && -f "${armbian_outputpath}/${USE_EXIST_BASE}" ]] ; then
+        armbian_rebuild_name=${USE_EXIST_BASE}
+        process_msg "(0/8) use exist image."
+        return 0
+    fi
+
     cp -f "${armbian_outputpath}/${armbian_rebuild_name}" "${armbian_image_file}"
     truncate -s ${root_mb}M "${armbian_image_file}"
     parted -s "${armbian_image_file}" resizepart 1 100%
@@ -962,6 +968,7 @@ refactor_bootfs() {
         sed -i "s|meson.*.dtb|${FDTFILE}|g" ${uenv_conf_file}
         sed -i "s|sun.*.dtb|${FDTFILE}|g" ${uenv_conf_file}
         sed -i "s|rk.*.dtb|${FDTFILE}|g" ${uenv_conf_file}
+        grep -q 'unified_cgroup_hierarchy=0' $uenv_conf_file || sed -i '/APPEND/s/$/ systemd.unified_cgroup_hierarchy=0/' ${uenv_conf_file}
     }
 
     # Add an alternate file (/boot/extlinux/extlinux.conf)
@@ -984,6 +991,7 @@ refactor_bootfs() {
         sed -i "s|^rootdev=.*|rootdev=${armbianenv_rootdev}|g" ${armbianenv_conf_file}
         sed -i "s|^rootflags=.*|rootflags=${armbianenv_rootflags}|g" ${armbianenv_conf_file}
         sed -i "s|^overlay_prefix=.*|overlay_prefix=${FAMILY}|g" ${armbianenv_conf_file}
+        sed -i "s|^extraargs=.*|extraargs=systemd.unified_cgroup_hierarchy=0|g" ${armbianenv_conf_file}
     }
 
     # Check device configuration files
@@ -1208,10 +1216,6 @@ refactor_rootfs() {
 }
 
 custom_rootfs() {
-    if [ "$(uname -m)" != "aarch64" ]; then
-        process_msg "(7/8) skip run custom script on cross platform"
-        return 0
-    fi
     process_msg "(7/8) run custom script for dist image"
 
     [[ ! -d "${different_script_files}/${board}" ]] && return 0
@@ -1247,7 +1251,7 @@ clean_tmp() {
 
     cd ${tmp_outpath}
     # Compress Armbian image file
-    pigz -qf ${armbian_filename} || gzip -qf ${armbian_filename}
+#    pigz -qf ${armbian_filename} || gzip -qf ${armbian_filename}
     # Move Armbian files to the output directory
     mv -f ${armbian_filename}* -t ${armbian_outputpath}
 
