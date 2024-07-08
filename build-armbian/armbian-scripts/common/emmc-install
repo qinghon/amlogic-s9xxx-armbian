@@ -7,6 +7,7 @@ root_devname="$(df / | tail -n1 | awk '{print $1}' | awk -F '/' '{print substr($
 if lsblk -l | grep -E "^${root_devname}boot0" >/dev/null; then
     echo "Current system is already installed to eMMC!"
     rm $0
+    exit 0
 fi
 
 source /etc/ophub-release
@@ -24,7 +25,7 @@ rm -f /root/.bcode.txt
 printf "$MODEL_ID\n2\n\n" | armbian-install
 
 mount ${root_devname}p2 /mnt
-rm -f /mnt/usr/bin/emmc-install
+rm -vf /mnt/usr/bin/emmc-install
 if [[ -n "$MAC_PREFIX" ]] ; then
     MAC_PREFIX_=${MAC_PREFIX//:/""}
     MAC_PREFIX_CNT=$((${#MAC_PREFIX_} / 2 ))

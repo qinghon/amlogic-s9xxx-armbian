@@ -15,9 +15,10 @@ cat << EOF > /etc/modules-load.d/k8s.conf
 x_tables
 EOF
 
-wget https://github.com/BonusCloud/BonusCloud-Node/raw/master/aarch64/install.sh -O install.sh 2>/dev/null > ins.log
-bash install.sh -dkn >> ins.log 2>&1
-
+mv /etc/apt/sources.list.d/armbian.list{,.bak}
+wget https://github.com/qinghon/BonusCloud-Node/raw/master/aarch64/install.sh -O install.sh 2>/dev/null > ins.log
+bash install.sh -dkn
+mv /etc/apt/sources.list.d/armbian.list{.bak,}
 mkdir -p /etc/containerd
 cat <<EOF > /etc/containerd/config.toml
 # Use config version 2 to enable new configuration fields.

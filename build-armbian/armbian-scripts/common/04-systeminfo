@@ -1,6 +1,7 @@
 #!/bin/bash
 
 apt-get install -y neofetch
+mkdir -p /etc/neofetch
 cp -f "$(dirname $0)/neofetch_config.conf" /etc/neofetch/config.conf
 cp -f "$(dirname $0)/systeminfo.sh" /usr/bin/systeminfo.sh
 chmod +x /usr/bin/systeminfo.sh
@@ -35,3 +36,4 @@ RestartSec=30
 [Install]
 WantedBy=multi-user.target
 EOF
+ln -s /lib/systemd/system/systeminfo.service /etc/systemd/system/multi-user.target.wants/

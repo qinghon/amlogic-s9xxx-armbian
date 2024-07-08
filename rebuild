@@ -668,7 +668,7 @@ custom_armbian_base() {
     truncate -s ${root_mb}M "${armbian_image_file}"
     parted -s "${armbian_image_file}" resizepart 1 100%
 
-    loop_old="$(losetup -P -f --show "${armbian_image_file}")"
+    loop_old="$(losetup -b 512 -P -f --show "${armbian_image_file}")"
     [[ -n "${loop_old}" ]] || error_msg "losetup ${armbian_image_file} failed."
     e2fsck -f ${loop_old}p1
     resize2fs ${loop_old}p1
@@ -707,7 +707,7 @@ extract_armbian() {
     rm -f ${armbian_image_file}
     cp -f "${armbian_outputpath}/${armbian_rebuild_name}" "${armbian_image_file}"
 
-    loop_old="$(losetup -P -f --show "${armbian_image_file}")"
+    loop_old="$(losetup -b 512 -P -f --show "${armbian_image_file}")"
     [[ -n "${loop_old}" ]] || error_msg "losetup ${armbian_image_file} failed."
 
     mount_try ext4 ${loop_old}p1 ${tmp_armbian}
@@ -762,7 +762,7 @@ make_image() {
     parted -s ${build_image_file} mkpart primary ${bootfs_type} $((skip_mb))MiB $((skip_mb + boot_mb - 1))MiB 2>/dev/null
     parted -s ${build_image_file} mkpart primary ${rootfs_type} $((skip_mb + boot_mb))MiB 100% 2>/dev/null
 
-    loop_new="$(losetup -P -f --show "${build_image_file}")"
+    loop_new="$(losetup -b 512 -P -f --show "${build_image_file}")"
     [[ -n "${loop_new}" ]] || error_msg "losetup ${build_image_file} failed."
 
     # Confirm BOOT_UUID
