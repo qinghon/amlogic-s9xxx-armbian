@@ -22,7 +22,7 @@ fi
 systemctl stop bxc-node
 rm -f /root/.bcode.txt
 
-printf "$MODEL_ID\n2\n\n" | armbian-install
+printf "$MODEL_ID\n1\n\n" | armbian-install
 
 mount ${root_devname}p2 /mnt
 rm -vf /mnt/usr/bin/emmc-install
